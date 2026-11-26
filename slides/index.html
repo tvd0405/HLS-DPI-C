@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPI-C ↔ ap_fixed — Tutorial</title>
+<meta name="description" content="How fixed-point values cross the SystemVerilog/C DPI boundary: raw-bit transfer, ap_fixed decode, sign extension, and wide types.">
+<style>
+/* ============================================================
+   HLS-DPI-C tutorial deck — self-contained, no external assets
+   ============================================================ */
+:root{
+  --paper:#f6f8fc;
+  --ink:#141b2b;
+  --muted:#5d6779;
+  --line:#dfe4ee;
+  --accent:#2b5be3;
+  --accent-soft:#e8eeff;
+  --accent-ink:#173a8a;
+  --teal:#0e7c6b;
+  --teal-soft:#e2f5f1;
+  --teal-ink:#0b5a4a;
+  --amber:#a16207;
+  --amber-soft:#fdf3d8;
+  --red:#b42318;
+  --red-soft:#fdecea;
+  --code-bg:#0d1424;
+  --code-ink:#dbe4f6;
+  --code-muted:#7f8fae;
+  --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:#0a101d;
+  color:#e8edf7;
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* ---------- viewport + fixed 1280x720 stage ---------- */
+.viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.stage{
+  position:absolute;left:50%;top:50%;
+  width:1280px;height:720px;
+  transform:translate(-50%,-50%);
+  transform-origin:center center;
+}
+.slide{
+  position:absolute;inset:0;
+  display:none;flex-direction:column;
+  padding:42px 60px 50px;
+  background:
+    radial-gradient(circle at 92% 6%, rgba(43,91,227,.075), transparent 42%),
+    radial-gradient(circle at 4% 96%, rgba(14,124,107,.06), transparent 38%),
+    var(--paper);
+  color:var(--ink);
+  border-radius:14px;
+  box-shadow:0 30px 90px rgba(0,0,0,.5);
+  overflow:hidden;
+}
+.slide.active{display:flex}
+
+/* ---------- header ---------- */
+.kicker{
+  display:flex;align-items:center;gap:10px;
+  font-size:11.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);
+}
+.kicker::before{content:"";width:26px;height:2px;border-radius:2px;background:var(--accent)}
+h2{
+  margin:9px 0 6px;
+  font-size:33px;line-height:1.13;font-weight:800;letter-spacing:-.018em;
+}
+.lead{margin:0;max-width:1060px;font-size:16.5px;line-height:1.5;color:var(--muted)}
+.body{flex:1;min-height:0;margin-top:20px;display:flex;flex-direction:column;gap:14px}
+
+/* ---------- generic text ---------- */
+p{margin:0}
+ul{margin:0;padding-left:20px}
+li{margin:6px 0;line-height:1.45}
+b,strong{font-weight:750}
+code{
+  font-family:var(--mono);font-size:.9em;
+  background:#e9eef9;color:var(--accent-ink);
+  padding:1px 5px;border-radius:4px;
+  white-space:nowrap;
+}
+pre code{background:none;padding:0;color:inherit;font-size:inherit;white-space:pre}
+
+/* ---------- code panels ---------- */
+.code{
+  background:var(--code-bg);
+  color:var(--code-ink);
+  border-radius:12px;
+  padding:15px 18px 16px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+  overflow:hidden;
+}
+.code-head{
+  font-family:var(--mono);font-size:11px;letter-spacing:.07em;
+  color:#8fa0c4;margin-bottom:9px;
+  display:flex;justify-content:space-between;gap:12px;
+}
+.code-head .tag{color:#5f6f92}
+.code pre{margin:0;font-family:var(--mono);font-size:14.5px;line-height:1.62;white-space:pre;overflow:auto}
+.code .c{color:#7f96b8;font-style:italic}
+.code .t{color:#7ee0c0}
+.code .k{color:#8ab4ff}
+.code .n{color:#ffcf7a}
+.code .f{color:#c7b3ff}
+.code .warn{color:#ffb4a8}
+
+/* ---------- cards / callouts ---------- */
+.card{
+  background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);
+}
+.card h3{margin:0 0 10px;font-size:15.5px;letter-spacing:-.005em;font-weight:800}
+.card h3 .sub{font-weight:600;color:var(--muted);font-size:13px}
+.card ul{padding-left:18px}
+.card li{font-size:15px;margin:5px 0}
+.note{
+  border-left:3px solid var(--accent);
+  background:var(--accent-soft);
+  padding:11px 15px;border-radius:0 10px 10px 0;
+  font-size:15px;line-height:1.45;color:#22315a;
+}
+.note.teal{border-left-color:var(--teal);background:var(--teal-soft);color:#123f37}
+.note.amber{border-left-color:var(--amber);background:var(--amber-soft);color:#5c3c05}
+.note b{color:inherit}
+
+/* ---------- tables ---------- */
+table.tbl{width:100%;border-collapse:collapse}
+table.tbl th{
+  text-align:left;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);font-weight:800;padding:0 10px 7px;border-bottom:1.5px solid var(--line);
+}
+table.tbl td{
+  padding:7px 10px;border-bottom:1px solid var(--line);
+  font-size:14.5px;line-height:1.35;vertical-align:top;
+}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl td.mono,table.tbl th.mono{font-family:var(--mono)}
+table.tbl .dim{color:var(--muted)}
+table.tbl tr.hl td{background:#f3f6ff}
+
+/* ---------- grids ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.split{display:grid;grid-template-columns:1.12fr .88fr;gap:24px;min-height:0}
+.stack{display:flex;flex-direction:column;gap:12px;min-height:0}
+
+/* ---------- chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:9px}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:12.5px;font-weight:650;
+  padding:6px 11px;border-radius:999px;
+  background:#fff;border:1px solid var(--line);color:#33405a;
+}
+.chip.mono{font-family:var(--mono);font-weight:600}
+
+/* ---------- formulas ---------- */
+.formula{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:16px 22px;
+}
+.formula .eq{font-family:var(--mono);font-size:19px;font-weight:650;color:var(--ink)}
+.formula .eq em{font-style:normal;color:var(--accent)}
+.formula .sep{width:1px;align-self:stretch;background:var(--line)}
+.formula .lbl{font-size:12px;color:var(--muted);line-height:1.35;max-width:210px}
+
+/* ---------- bit strips ---------- */
+.bitwrap{display:flex;flex-direction:column;gap:7px}
+.bitlabel{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--muted)}
+.bitlabel .mono{font-family:var(--mono);color:#33405a;font-weight:650}
+.bits{display:grid;grid-template-columns:repeat(32,1fr);gap:3px}
+.bits span{
+  height:28px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:9.5px;color:#8b94a8;
+  background:#eaeef6;border-radius:4px;
+}
+.bits span.tone-a{background:#ccdbff;color:#173a8a;font-weight:700}
+.bits span.tone-c{background:#c3ece3;color:#0b5a4a;font-weight:700}
+.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend .sw-a{background:#ccdbff}
+.legend .sw-c{background:#c3ece3}
+.legend .sw-none{background:#eaeef6}
+
+/* ---------- flow ---------- */
+.flow{display:flex;align-items:stretch;gap:0}
+.step{
+  flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;
+  padding:12px 12px 13px;display:flex;flex-direction:column;gap:6px;min-width:0;
+}
+.step .no{
+  font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  color:var(--muted);
+}
+.step .st{font-size:13.5px;font-weight:750;line-height:1.25}
+.step .sc{font-family:var(--mono);font-size:11px;line-height:1.45;color:#33405a;word-break:break-word}
+.step .dm{margin-top:auto;font-size:10.5px;font-weight:750;letter-spacing:.07em;text-transform:uppercase}
+.step.val .dm{color:var(--accent)}
+.step.bit .dm{color:var(--amber)}
+.step.rtl .dm{color:var(--teal)}
+.arr{display:flex;align-items:center;justify-content:center;width:22px;color:#a3adc2;font-size:16px;flex:none}
+
+/* ---------- hero ---------- */
+.slide.hero{
+  padding:0;background:#0a1222;color:#eef3ff;border-radius:14px;
+}
+.hero .hero-grid{
+  position:relative;z-index:2;height:100%;
+  display:grid;grid-template-columns:1.18fr .82fr;gap:44px;
+  padding:64px 66px 58px;align-items:center;
+}
+.hero .glow{
+  position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:
+    radial-gradient(900px 480px at 78% 20%, rgba(43,91,227,.28), transparent 60%),
+    radial-gradient(700px 420px at 8% 92%, rgba(14,124,107,.20), transparent 55%);
+}
+.hero .hero-lines{
+  position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(circle at 50% 50%,#000 30%,transparent 78%);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%,#000 30%,transparent 78%);
+}
+.hero .t-kicker{
+  font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#8fb0ff;
+  display:flex;align-items:center;gap:10px;
+}
+.hero .t-kicker::before{content:"";width:30px;height:2px;background:#8fb0ff;border-radius:2px}
+.hero h1{
+  margin:20px 0 16px;
+  font-size:70px;line-height:1.02;letter-spacing:-.035em;font-weight:820;
+}
+.hero h1 .thin{color:#8fa4cc;font-weight:400}
+.hero h1 .arr2{color:#5f8cff;font-weight:400}
+.hero .t-sub{
+  font-size:20px;line-height:1.5;color:#a9b6cf;max-width:620px;margin:0;
+}
+.hero .t-chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:30px}
+.hero .chip{
+  background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.14);
+  color:#c8d3e8;font-size:12px;
+}
+.hero .t-foot{
+  position:absolute;left:66px;bottom:26px;z-index:2;
+  font-size:12px;color:#68789b;letter-spacing:.04em;
+}
+.hero-card{
+  position:relative;z-index:2;
+  background:rgba(13,22,40,.72);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:18px;padding:22px 22px 20px;
+  backdrop-filter:blur(6px);
+  box-shadow:0 24px 60px rgba(0,0,0,.35);
+}
+.hero-card .hc-head{
+  font-size:10.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+  color:#8fa0c4;margin-bottom:16px;
+}
+.hero-card .hc-row{display:flex;flex-direction:column;gap:3px;padding:9px 0}
+.hero-card .hc-main{font-family:var(--mono);font-size:16px;color:#eaf0ff;font-weight:600}
+.hero-card .hc-sub{font-size:11.5px;color:#8fa0c4}
+.hero-card .hc-op{
+  display:flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:11.5px;color:#6fb5a6;padding:1px 0 1px 2px;
+}
+.hero-card .hc-op::before{content:"";width:1px;height:14px;background:rgba(255,255,255,.16);margin-right:6px}
+.hero-card .hc-div{height:1px;background:rgba(255,255,255,.11);margin:8px 0}
+
+/* ---------- footer bits ---------- */
+.deckmark,.pager{
+  position:absolute;bottom:17px;font-family:var(--mono);font-size:11px;
+  color:#9aa4b8;letter-spacing:.05em;z-index:3;
+}
+.deckmark{left:60px}
+.pager{right:60px}
+.hero .deckmark,.hero .pager{color:#68789b}
+.title-hidden .deckmark,.title-hidden .pager{display:none}
+
+/* ---------- chrome outside the slide ---------- */
+.progress{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(255,255,255,.07);z-index:20}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2b5be3,#0e7c6b);transition:width .25s ease}
+.nav{
+  position:fixed;right:16px;top:10px;z-index:20;display:flex;gap:2px;
+  opacity:.9;transition:opacity .18s ease;
+}
+.nav:hover{opacity:1}
+.nav button{
+  width:28px;height:28px;border:0;background:transparent;
+  color:#7d8aa3;font-size:22px;line-height:1;cursor:pointer;
+  transition:color .15s ease;
+}
+.nav button:hover{color:#1b2a52}
+
+/* ---------- print: every slide on its own page ---------- */
+@media print{
+  html,body{background:#fff;height:auto}
+  .viewport{position:static;display:block;overflow:visible}
+  .stage{
+    position:static;width:auto;height:auto;
+    transform:none !important;left:auto;top:auto;
+  }
+  .slide{
+    display:flex !important;
+    position:relative;
+    width:1280px;height:720px;
+    border-radius:0;box-shadow:none;
+    page-break-after:always;break-after:page;
+    overflow:hidden;
+  }
+  .slide:last-child{page-break-after:auto;break-after:auto}
+  .progress,.nav{display:none !important}
+  @page{size:13.333in 7.5in;margin:0}
+}
+.slide,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@media (prefers-reduced-motion:reduce){
+  .progress i{transition:none}
+}
+</style>
+</head>
+<body>
+
+<div class="progress"><i id="bar"></i></div>
+
+<div class="viewport">
+<div class="stage" id="stage">
+
+<!-- ================= 1 · TITLE ================= -->
+<section class="slide hero title-hidden" data-title="Title">
+  <div class="glow"></div>
+  <div class="hero-lines"></div>
+  <div class="hero-grid">
+    <div>
+      <div class="t-kicker">HLS-DPI-C · Tutorial</div>
+      <h1>DPI-C <span class="arr2">↔</span> ap_fixed</h1>
+      <p class="t-sub">How fixed-point values cross the SystemVerilog ⇄ C boundary —
+        with no fixed-point DPI type, no floating point, and no lost bits.</p>
+      <div class="t-chips">
+        <span class="chip mono">ap_fixed&lt;11,1&gt; → int</span>
+        <span class="chip">Vitis HLS 2025.2</span>
+        <span class="chip">Xcelium 26.03</span>
+        <span class="chip">1024 vectors, bit-exact</span>
+      </div>
+    </div>
+    <div class="hero-card">
+      <div class="hc-head">Same bits · different binary point</div>
+      <div class="hc-row">
+        <span class="hc-main">0x0000_02CD</span>
+        <span class="hc-sub">int word · W = 11</span>
+      </div>
+      <div class="hc-op">÷ 2¹⁰ &nbsp;→&nbsp; 717 / 1024</div>
+      <div class="hc-row">
+        <span class="hc-main">0.700195…</span>
+        <span class="hc-sub">value as ap_fixed&lt;11,1&gt;</span>
+      </div>
+      <div class="hc-div"></div>
+      <div class="hc-row">
+        <span class="hc-main">0x0003_5BD7</span>
+        <span class="hc-sub">int word · W = 21</span>
+      </div>
+      <div class="hc-op">÷ 2²⁰ &nbsp;→&nbsp; 220119 / 2²⁰</div>
+      <div class="hc-row">
+        <span class="hc-main">0.209983…</span>
+        <span class="hc-sub">value as ap_fixed&lt;21,1&gt;</span>
+      </div>
+    </div>
+  </div>
+  <div class="t-foot">VSI · 2026-11-26 · examples taken from this repository &nbsp;·&nbsp; ← → navigate</div>
+</section>
+
+<!-- ================= 2 · THE PROBLEM ================= -->
+<section class="slide" data-title="No fixed-point DPI type">
+  <div class="kicker">The problem</div>
+  <h2>There is no fixed-point DPI type</h2>
+  <p class="lead">DPI-C defines an exact C mapping for a fixed set of SystemVerilog types.
+    <code>ap_fixed</code> is not among them — it is a C++ class template, not a language type.</p>
+
+  <div class="body">
+    <div class="split">
+      <div class="card" style="padding:14px 16px">
+        <table class="tbl">
+          <tr><th>SystemVerilog type</th><th>C type</th><th>Width</th></tr>
+          <tr><td class="mono">byte</td><td class="mono">char</td><td class="dim">8</td></tr>
+          <tr><td class="mono">shortint</td><td class="mono">short int</td><td class="dim">16</td></tr>
+          <tr><td class="mono">int</td><td class="mono">int</td><td class="dim">32</td></tr>
+          <tr><td class="mono">longint</td><td class="mono">long long</td><td class="dim">64</td></tr>
+          <tr><td class="mono">bit</td><td class="mono">svBit</td><td class="dim">1</td></tr>
+          <tr><td class="mono">logic</td><td class="mono">svLogic</td><td class="dim">1</td></tr>
+          <tr><td class="mono">real</td><td class="mono">double</td><td class="dim">64</td></tr>
+          <tr><td class="mono">shortreal</td><td class="mono">float</td><td class="dim">32</td></tr>
+          <tr><td class="mono">string</td><td class="mono">const char*</td><td class="dim">—</td></tr>
+          <tr><td class="mono">chandle</td><td class="mono">void*</td><td class="dim">—</td></tr>
+          <tr><td class="mono">bit [W-1:0]</td><td class="mono">svBitVecVal*</td><td class="dim">⌈W/32⌉ words</td></tr>
+          <tr><td class="mono">logic [W-1:0]</td><td class="mono">svLogicVecVal*</td><td class="dim">⌈W/32⌉ words</td></tr>
+          <tr><td class="mono">T [N] (unpacked)</td><td class="mono">T*</td><td class="dim">N elements</td></tr>
+        </table>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h3>ap_fixed lives only in C++</h3>
+          <ul>
+            <li>A class template: <code>ap_fixed&lt;W,I,Q,O,N&gt;</code></li>
+            <li><code>W</code>, <code>I</code>, <code>Q</code>, <code>O</code> are compile-time parameters.</li>
+            <li>No matching SV type, no DPI mapping, no vendor wrapper.</li>
+          </ul>
+        </div>
+        <div class="note">
+          <b>Consequence:</b> the boundary cannot carry fixed-point objects.
+          It carries the only thing both sides agree on: <b>bits</b>.
+        </div>
+        <div class="note amber" style="font-size:13px">
+          Project finding: Xcelium 26.03 and IXCOM 26.07 provide no fixed-point DPI mapping.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3 · TWO WORLDS ================= -->
+<section class="slide" data-title="Two worlds">
+  <div class="kicker">Two worlds</div>
+  <h2>The same value, described twice</h2>
+  <p class="lead">Each side knows something the other does not. The DPI boundary is where the two descriptions meet.</p>
+
+  <div class="body">
+    <div class="grid2">
+      <div class="card">
+        <h3>SystemVerilog side <span class="sub">— bits, no binary point</span></h3>
+        <ul>
+          <li><code>int a_data[1024];</code> — 32-bit, 2-state</li>
+          <li><code>wire [10:0] a_dout;</code> — 11 raw bits</li>
+          <li><code>wire [20:0] c_din;</code> — 21 raw bits</li>
+        </ul>
+        <div class="note" style="margin-top:14px">
+          It can slice, widen and compare. It cannot say “this word means 0.7”.
+        </div>
+      </div>
+      <div class="card">
+        <h3>C / HLS side <span class="sub">— format is part of the type</span></h3>
+        <ul>
+          <li><code>ap_fixed&lt;11,1,AP_RND,AP_SAT&gt;</code> — 11 bits, 10 fractional</li>
+          <li><code>ap_fixed&lt;21,1,AP_RND,AP_SAT&gt;</code> — 21 bits, 20 fractional</li>
+          <li>Assignment applies rounding and saturation.</li>
+        </ul>
+        <div class="note teal" style="margin-top:14px">
+          It can multiply, round and print. It cannot see 4-state logic or X.
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="font-size:16px">
+      <b>Contract at the boundary:</b> the DPI word holds the W-bit two’s-complement raw value.
+      The binary point is metadata and never crosses. Decoding it is the C side’s job.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4 · AP_FIXED ================= -->
+<section class="slide" data-title="ap_fixed in one slide">
+  <div class="kicker">Decoding the type</div>
+  <h2>ap_fixed in one slide</h2>
+  <p class="lead">Three numbers describe the whole format: the word width, the integer width, and the gap between them.</p>
+
+  <div class="body">
+    <div class="formula" style="justify-content:center;gap:34px">
+      <div class="eq"><em>W</em> total bits</div>
+      <div class="sep"></div>
+      <div class="eq"><em>I</em> integer bits <span style="font-size:13px;color:var(--muted)">(sign included)</span></div>
+      <div class="sep"></div>
+      <div class="eq"><em>F</em> = W − I fractional bits</div>
+    </div>
+
+    <div class="formula" style="justify-content:center;gap:46px">
+      <div class="eq">value = raw / 2<sup><em>F</em></sup></div>
+      <div class="sep"></div>
+      <div class="eq">raw = value × 2<sup><em>F</em></sup></div>
+    </div>
+
+    <div class="card" style="padding:10px 16px">
+      <table class="tbl">
+        <tr>
+          <th>Type in hls/define.h</th><th>Declaration</th>
+          <th>W</th><th>I</th><th>F</th><th>LSB</th><th>Range</th>
+        </tr>
+        <tr>
+          <td class="mono"><b>data_t</b></td>
+          <td class="mono">ap_fixed&lt;W+1,1,AP_RND,AP_SAT&gt;</td>
+          <td class="mono">11</td><td class="mono">1</td><td class="mono">10</td>
+          <td class="mono">2⁻¹⁰ ≈ 9.766e-4</td>
+          <td class="mono">[−1, 0.9990234375]</td>
+        </tr>
+        <tr>
+          <td class="mono"><b>out_t</b></td>
+          <td class="mono">ap_fixed&lt;2*W+1,1,AP_RND,AP_SAT&gt;</td>
+          <td class="mono">21</td><td class="mono">1</td><td class="mono">20</td>
+          <td class="mono">2⁻²⁰ ≈ 9.537e-7</td>
+          <td class="mono">[−1, 0.9999990463]</td>
+        </tr>
+      </table>
+      <div class="legend" style="margin-top:10px">
+        <span><code>W = 10</code> in <code>define.h</code>, so <code>data_t</code> is <code>W+1 = 11</code> bits wide.</span>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="note">
+        <b>I = 1</b> means the only integer bit is the sign bit. Both types hold fractions in [−1, 1).
+      </div>
+      <div class="note amber">
+        <b>Q / O apply on assignment:</b> <code>AP_RND</code> rounds to nearest,
+        <code>AP_SAT</code> clamps on overflow.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 · HLS FLATTENS ================= -->
+<section class="slide" data-title="HLS flattens ap_fixed">
+  <div class="kicker">What HLS generates</div>
+  <h2>HLS flattens ap_fixed to plain wires</h2>
+  <p class="lead">The DUT is compiled with FIFO interfaces. Every <code>ap_fixed</code> port becomes a W-bit wire; the format disappears.</p>
+
+  <div class="body">
+    <div class="grid2">
+      <div class="code">
+        <div class="code-head"><span>hls/dut.cpp</span><span class="tag">source</span></div>
+        <pre><span class="c">// one element per cycle, no handshake on return</span>
+#pragma HLS INTERFACE ap_fifo port=a,b,c
+#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS PIPELINE
+
+<span class="k">for</span> (<span class="t">int</span> i=0; i&lt;N; i++)
+#pragma HLS UNROLL off
+    c[i] = a[i] * b[i];</pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span>wdir/hls/impl/verilog/dut.v</span><span class="tag">generated</span></div>
+        <pre><span class="k">input</span>  [<span class="n">10</span>:<span class="n">0</span>] a_dout;   <span class="c">// ap_fixed&lt;11,1&gt;</span>
+<span class="k">input</span>  [<span class="n">10</span>:<span class="n">0</span>] b_dout;   <span class="c">// ap_fixed&lt;11,1&gt;</span>
+<span class="k">output</span> [<span class="n">20</span>:<span class="n">0</span>] c_din;    <span class="c">// ap_fixed&lt;21,1&gt;</span></pre>
+      </div>
+    </div>
+
+    <div class="note teal">
+      The synthesised DUT carries <b>no format information</b>. All binary-point bookkeeping happened
+      inside HLS at compile time; the testbench only wires bits.
+    </div>
+
+    <div class="grid3">
+      <div class="card" style="padding:12px 15px">
+        <h3 style="font-size:13.5px;margin-bottom:5px">Port width</h3>
+        <p style="font-size:14px;color:var(--muted)">W bits, exactly the raw word — no padding, no scale factor.</p>
+      </div>
+      <div class="card" style="padding:12px 15px">
+        <h3 style="font-size:13.5px;margin-bottom:5px">Product</h3>
+        <p style="font-size:14px;color:var(--muted)">11s × 11s gives a 22-bit product (<code>dut_mul_11s_11s_22_1_1</code>).</p>
+      </div>
+      <div class="card" style="padding:12px 15px">
+        <h3 style="font-size:13.5px;margin-bottom:5px">Output</h3>
+        <p style="font-size:14px;color:var(--muted)">Rounded and saturated to 21 bits by <code>select_ln11</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6 · BRIDGE RULE ================= -->
+<section class="slide" data-title="One element = one raw word">
+  <div class="kicker">The bridge rule</div>
+  <h2>One element = one raw word</h2>
+  <p class="lead">Everything in this deck follows from four rules. They fit on a napkin.</p>
+
+  <div class="body">
+    <div class="grid4">
+      <div class="card" style="padding:13px 15px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.1em">01 · CARRIER</div>
+        <p style="margin-top:7px;font-size:14.5px;line-height:1.4">If W ≤ 32, use one <code>int</code> per element — a 32-bit two’s-complement word.</p>
+      </div>
+      <div class="card" style="padding:13px 15px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.1em">02 · PLACE</div>
+        <p style="margin-top:7px;font-size:14.5px;line-height:1.4">Keep the raw word in the <b>low W bits</b>. High bits are padding.</p>
+      </div>
+      <div class="card" style="padding:13px 15px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.1em">03 · READ</div>
+        <p style="margin-top:7px;font-size:14.5px;line-height:1.4">Mask when reading. Never trust whatever sits above bit W−1.</p>
+      </div>
+      <div class="card" style="padding:13px 15px">
+        <div style="font-family:var(--mono);font-size:11px;font-weight:800;color:var(--accent);letter-spacing:.1em">04 · SIGN</div>
+        <p style="margin-top:7px;font-size:14.5px;line-height:1.4">Signedness is interpretation, not transport. The bits are neutral.</p>
+      </div>
+    </div>
+
+    <div class="stack" style="gap:14px">
+      <div class="bitwrap">
+        <div class="bitlabel">
+          <span><b>int word for <code>a</code>, <code>b</code></b> — 32 bits</span>
+          <span class="mono">raw 0x2CD</span>
+        </div>
+        <div class="bits" data-raw="11" data-tone="a"></div>
+      </div>
+      <div class="bitwrap">
+        <div class="bitlabel">
+          <span><b>int word for <code>c</code></b> — 32 bits</span>
+          <span class="mono">raw 0x35BD7</span>
+        </div>
+        <div class="bits" data-raw="21" data-tone="c"></div>
+      </div>
+      <div class="legend">
+        <span><i class="sw-a"></i>raw <code>ap_fixed&lt;11,1&gt;</code>, bits 10…0</span>
+        <span><i class="sw-c"></i>raw <code>ap_fixed&lt;21,1&gt;</code>, bits 20…0</span>
+        <span><i class="sw-none"></i>unused / sign extension — mask before use</span>
+      </div>
+    </div>
+
+    <div class="note amber">
+      <b>The bits alone are ambiguous.</b> <code>0x2CD</code> means 717 only because F = 10.
+      Under F = 20 the same word would mean 717 / 2²⁰ ≈ 0.000684.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 7 · WHO CONVERTS WHAT ================= -->
+<section class="slide" data-title="Who converts what">
+  <div class="kicker">The conversion map</div>
+  <h2>Who converts what</h2>
+  <p class="lead">Only the two quantizers change a numeric value. Everything else is a copy, a slice, or a mask.</p>
+
+  <div class="body">
+    <div class="card" style="padding:8px 14px">
+      <table class="tbl">
+        <tr><th style="width:26px">#</th><th>Conversion</th><th>Mechanism</th><th>Where</th></tr>
+        <tr class="hl">
+          <td class="mono">1</td><td class="mono">double → data_t</td>
+          <td>assignment with <code>AP_RND</code> / <code>AP_SAT</code></td>
+          <td class="mono dim">dpi_hls_model.cpp:66</td>
+        </tr>
+        <tr>
+          <td class="mono">2</td><td class="mono">data_t → int</td>
+          <td><code>get_VAL() &amp; (2<sup>W</sup> − 1)</code></td>
+          <td class="mono dim">dpi_hls_model.cpp:37</td>
+        </tr>
+        <tr>
+          <td class="mono">3</td><td class="mono">int ↔ SV int</td>
+          <td>DPI open-array mapping — a bit copy</td>
+          <td class="mono dim">import signature</td>
+        </tr>
+        <tr>
+          <td class="mono">4</td><td class="mono">SV int → 11-bit wire</td>
+          <td>part-select <code>[10:0]</code></td>
+          <td class="mono dim">Tb_hls.sv:49</td>
+        </tr>
+        <tr class="hl">
+          <td class="mono">5</td><td class="mono">22-bit product → 21-bit</td>
+          <td>round + saturate in RTL</td>
+          <td class="mono dim">dut.v · select_ln11</td>
+        </tr>
+        <tr>
+          <td class="mono">6</td><td class="mono">21-bit wire → SV int</td>
+          <td><code>$signed()</code>, then widen</td>
+          <td class="mono dim">Tb_hls.sv:70</td>
+        </tr>
+        <tr>
+          <td class="mono">7</td><td class="mono">int → out_t</td>
+          <td><code>.V = ap_private&lt;21,true&gt;(…)</code></td>
+          <td class="mono dim">dpi_hls_model.cpp:50</td>
+        </tr>
+        <tr>
+          <td class="mono">8</td><td class="mono">raw compare</td>
+          <td>same mask on both sides, then <code>==</code></td>
+          <td class="mono dim">dpi_hls_model.cpp:88</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>Steps 1 and 5</b> can change a numeric value (rounding / saturation).
+      <b>Steps 2–4 and 6–8</b> move or mask bits — and must be exactly reversible.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8 · IDENTITY ================= -->
+<section class="slide" data-title="The round trip is the identity">
+  <div class="kicker">Why it works</div>
+  <h2>The round trip is the identity</h2>
+  <p class="lead">For any W-bit word, <code>ap_fixed → int → ap_fixed</code> reproduces the same bits. No arithmetic is involved.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>src/cpp/dpi_hls_model.cpp</span><span class="tag">raw-bit helpers</span></div>
+      <pre><span class="t">int</span>      w = raw_bits(va);   <span class="c">// low 11 bits, e.g. 0x2CD</span>
+<span class="t">data_t</span>   x = from_bits(w);   <span class="c">// same 11 bits inside ap_private&lt;11,true&gt;</span>
+<span class="c">// always true for W &lt;= 32</span>
+assert(raw_bits(x) == w);</pre>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3 style="font-size:13.5px;color:var(--amber)">Bits in</h3>
+        <p style="font-size:14.5px;color:#33405a">The low W bits of a 32-bit <code>int</code>. The rest is ignored.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px;color:var(--amber)">Bits stored</h3>
+        <p style="font-size:14.5px;color:#33405a"><code>ap_private&lt;W,true&gt;</code>: pure two’s-complement storage inside the object.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px;color:var(--amber)">Bits out</h3>
+        <p style="font-size:14.5px;color:#33405a"><code>get_VAL() &amp; (2<sup>W</sup>−1)</code>. Same W bits, no scaling.</p>
+      </div>
+    </div>
+
+    <div class="note teal" style="font-size:16px">
+      Because the path is lossless, a mismatch in the scoreboard is a <b>real model or RTL bug</b> —
+      not a conversion artifact.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 9 · FROM_BITS ================= -->
+<section class="slide" data-title="C → ap_fixed">
+  <div class="kicker">Converting C → ap_fixed</div>
+  <h2><code>from_bits()</code>: stuff the raw word</h2>
+  <p class="lead">Put the bits into the object’s storage and let the type interpret them.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>src/cpp/dpi_hls_model.cpp:50</span><span class="tag">C++</span></div>
+      <pre><span class="k">static</span> <span class="k">inline</span> <span class="t">data_t</span> <span class="f">from_bits</span>(<span class="t">int</span> v)
+{
+    <span class="t">data_t</span> x;                                    <span class="c">// ap_fixed&lt;11,1&gt;</span>
+    x.V = ap_private&lt;W + 1, <span class="k">true</span>&gt;(
+              (<span class="t">unsigned long long</span>)(<span class="t">uint32_t</span>)v);  <span class="c">// low 32 bits only</span>
+    <span class="k">return</span> x;
+}</pre>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Why each piece is there</h3>
+        <ul>
+          <li><code>x.V</code> is the raw container: <code>ap_private&lt;11,true&gt;</code>.</li>
+          <li><code>(uint32_t)</code> stops sign extension — <code>−1</code> contributes exactly <code>0x7FF</code>.</li>
+          <li>Vitis HLS 2025.2 C simulation has no public <code>set_raw()</code>; writing <code>V</code> is the working route.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="note">
+          Writing <code>V</code> <b>bypasses</b> <code>AP_RND</code>/<code>AP_SAT</code>.
+          The bits are taken verbatim — exactly what a scoreboard needs.
+        </div>
+        <div class="note amber">
+          For W &gt; 32 pass a <code>uint64_t</code> word instead of casting through <code>uint32_t</code>.
+          Above 64 bits, use the packed-vector route on slide 16.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 10 · RAW_BITS ================= -->
+<section class="slide" data-title="ap_fixed → C">
+  <div class="kicker">Converting ap_fixed → C</div>
+  <h2><code>raw_bits()</code>: mask, then move</h2>
+  <p class="lead"><code>get_VAL()</code> returns a sign-extended 64-bit view. The mask recovers the W-bit word.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>src/cpp/dpi_hls_model.cpp:37</span><span class="tag">C++</span></div>
+      <pre><span class="k">static</span> <span class="k">inline</span> <span class="t">unsigned</span> <span class="f">raw_bits</span>(<span class="k">const</span> <span class="t">data_t</span>&amp; x)
+{
+    <span class="k">return</span> (<span class="t">unsigned</span>)((<span class="t">unsigned long long</span>)x.V.get_VAL()
+                      &amp; ((<span class="n">1ULL</span> &lt;&lt; (W + <span class="n">1</span>)) - <span class="n">1</span>));
+}</pre>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3 style="font-size:13.5px">Sign extension leaks</h3>
+        <p style="font-size:14.5px;color:#33405a">Raw <code>0x7FF</code> (= −1) comes back as <code>0xFFFF_FFFF_FFFF_FFFF</code>. Mask it.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px">Mask = 2<sup>W</sup> − 1</h3>
+        <p style="font-size:14.5px;color:#33405a">Here <code>(1ULL &lt;&lt; 11) − 1 = 0x7FF</code>: exactly the type width.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px">No floating point</h3>
+        <p style="font-size:14.5px;color:#33405a">No division by 2<sup>F</sup>, no <code>double</code>. A pure bit copy.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      The result is returned <code>unsigned</code> on purpose: transport is unsigned, interpretation comes later.
+      Call <code>sign_extend()</code> only when the sign matters.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 11 · SIGN EXTEND ================= -->
+<section class="slide" data-title="Sign-extend and compare">
+  <div class="kicker">Comparing results</div>
+  <h2>Sign-extend both sides to the same width</h2>
+  <p class="lead">The scoreboard compares 21-bit words, so both values are normalized before the <code>==</code>.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>src/cpp/dpi_hls_model.cpp:43, 88</span><span class="tag">C++</span></div>
+      <pre><span class="k">static</span> <span class="k">inline</span> <span class="t">int</span> <span class="f">sign_extend</span>(<span class="t">unsigned</span> v, <span class="t">int</span> bits)
+{
+    <span class="k">const</span> <span class="t">long long</span> m   = <span class="n">1LL</span> &lt;&lt; (bits - <span class="n">1</span>);          <span class="c">// 0x0010_0000</span>
+    <span class="k">const</span> <span class="t">long long</span> val = (<span class="t">long long</span>)(v &amp; ((<span class="n">1u</span> &lt;&lt; bits) - <span class="n">1</span>));
+    <span class="k">return</span> (<span class="t">int</span>)((val &amp; m) ? val - (<span class="n">1LL</span> &lt;&lt; bits) : val);
+}
+
+<span class="c">// both sides normalized to 21 bits before the compare</span>
+<span class="k">const</span> <span class="t">int</span> exp = <span class="f">sign_extend</span>((<span class="t">unsigned</span>)cc[i].V.get_VAL(), <span class="n">2</span>*W + <span class="n">1</span>);
+<span class="k">const</span> <span class="t">int</span> got = <span class="f">sign_extend</span>((<span class="t">unsigned</span>)(<span class="t">uint32_t</span>)c_hw[i], <span class="n">2</span>*W + <span class="n">1</span>);
+<span class="k">if</span> (exp != got) ++errs;</pre>
+    </div>
+
+    <div class="grid2">
+      <div class="note">
+        <b>Mask first, interpret second.</b> Both operands go through the same 21-bit mask;
+        the comparison then means “same two’s-complement word”.
+      </div>
+      <div class="note amber">
+        <b>Do not skip the mask.</b> A sign-extended SV value and a zero-extended C value
+        differ for every negative result — the test would fail for the wrong reason.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 12 · SV SIDE ================= -->
+<section class="slide" data-title="SystemVerilog side">
+  <div class="kicker">The SystemVerilog side</div>
+  <h2>Slice in, sign-extend out</h2>
+  <p class="lead">The testbench does no arithmetic either — just a part-select and a cast.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>src/v/Tb_hls.sv:49, 70</span><span class="tag">SystemVerilog</span></div>
+      <pre><span class="c">// int -&gt; 11-bit wire: take the low bits (no arithmetic)</span>
+<span class="k">wire</span> [<span class="n">10</span>:<span class="n">0</span>] a_dout = (rd_idx &lt; N) ? a_data[rd_idx][<span class="n">10</span>:<span class="n">0</span>] : <span class="n">11'd0</span>;
+
+<span class="c">// 21-bit wire -&gt; int: make the vector signed, then widen</span>
+<span class="k">always</span> @(<span class="k">posedge</span> clk)
+  <span class="k">if</span> (c_write &amp;&amp; wr_idx &lt; N)
+    c_hw[wr_idx] &lt;= <span class="f">$signed</span>(c_din);</pre>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3 style="font-size:13.5px">Part-select = truncation</h3>
+        <p style="font-size:14.5px;color:#33405a"><code>[10:0]</code> throws away high bits. Safe here: the int already holds only 11 significant bits.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px"><code>$signed</code> changes meaning</h3>
+        <p style="font-size:14.5px;color:#33405a">It does not touch the bits; it makes the following widening <b>sign</b>-extend instead of zero-extend.</p>
+      </div>
+      <div class="card">
+        <h3 style="font-size:13.5px">Free-running port</h3>
+        <p style="font-size:14.5px;color:#33405a"><code>ap_ctrl_none</code>: <code>c_din</code> is combinational and valid in the <code>c_write</code> cycle.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      With a 21-bit unsigned vector, any negative product would arrive as a large positive int
+      (<code>2²¹ − |c|</code>). <code>$signed()</code> is what makes the scoreboard’s signed compare meaningful.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 13 · EXACT EXAMPLE ================= -->
+<section class="slide" data-title="Worked example — exact">
+  <div class="kicker">Worked example · exact</div>
+  <h2>Powers of two: no rounding at all</h2>
+  <p class="lead">A value is just its raw word scaled by 2<sup>−F</sup>. Choose exact inputs and the whole chain is trivial.</p>
+
+  <div class="body">
+    <div class="card" style="padding:10px 16px">
+      <table class="tbl">
+        <tr><th>Signal</th><th>Value</th><th>F</th><th>Raw (dec)</th><th>Raw (hex)</th><th>Raw (binary, W bits)</th></tr>
+        <tr>
+          <td class="mono"><b>a</b></td><td class="mono">0.5</td><td class="mono">10</td>
+          <td class="mono">512</td><td class="mono">0x0200</td>
+          <td class="mono">010_0000_0000</td>
+        </tr>
+        <tr>
+          <td class="mono"><b>b</b></td><td class="mono">0.25</td><td class="mono">10</td>
+          <td class="mono">256</td><td class="mono">0x0100</td>
+          <td class="mono">001_0000_0000</td>
+        </tr>
+        <tr class="hl">
+          <td class="mono"><b>c</b></td><td class="mono">0.125</td><td class="mono">20</td>
+          <td class="mono">131072</td><td class="mono">0x2_0000</td>
+          <td class="mono">0_0010_0000_0000_0000_0000</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="formula">
+      <div class="eq">c<sub>raw</sub> = a<sub>raw</sub> · b<sub>raw</sub> · 2<sup>F<sub>out</sub> − 2·F<sub>in</sub></sup></div>
+      <div class="sep"></div>
+      <div class="eq">= 512 · 256 · 2<sup>20−20</sup> = <em>131072</em></div>
+    </div>
+
+    <div class="grid2">
+      <div class="note">
+        Here <code>F<sub>out</sub> = 2·F<sub>in</sub></code>, so the scale factor is 2⁰:
+        the output raw word is simply the integer product of the input raw words.
+      </div>
+      <div class="note teal">
+        On the wire: <code>a_dout = 11'h200</code>, <code>b_dout = 11'h100</code>,
+        <code>c_din = 21'h20000</code>. The SV testbench never knows these are 0.5, 0.25, 0.125.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 14 · ROUNDING ================= -->
+<section class="slide" data-title="Worked example — rounding">
+  <div class="kicker">Worked example · quantization</div>
+  <h2>Round once, then stay exact</h2>
+  <p class="lead">Real-valued stimulus has to be quantized when it enters <code>ap_fixed</code>. After that, every step in this chain is integer-exact.</p>
+
+  <div class="body">
+    <div class="card" style="padding:10px 16px">
+      <table class="tbl">
+        <tr><th>Signal</th><th>Real value</th><th>× 2<sup>F</sup></th><th>Stored in ap_fixed</th><th>Raw word</th></tr>
+        <tr>
+          <td class="mono"><b>a</b></td><td class="mono">0.7</td><td class="mono">716.8</td>
+          <td class="mono">AP_RND → 717</td><td class="mono">0x2CD</td>
+        </tr>
+        <tr>
+          <td class="mono"><b>b</b></td><td class="mono">0.3</td><td class="mono">307.2</td>
+          <td class="mono">AP_RND → 307</td><td class="mono">0x133</td>
+        </tr>
+        <tr class="hl">
+          <td class="mono"><b>c</b></td><td class="mono">0.209982872…</td><td class="mono">220119</td>
+          <td class="mono">exact at F = 20</td><td class="mono">0x3_5BD7</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="grid2">
+      <div class="stack">
+        <div class="note">
+          <b>Why the output is exact:</b> 717 × 307 = 220119, and 220119 &lt; 2²¹.
+          The 22-bit product needs no rounding at 21 bits.
+        </div>
+        <div class="note teal">
+          The RTL applies the same quantization to the 22-bit product
+          (<code>dut.v</code>: <code>tmp</code>/<code>select_ln11</code>) — same bits, same result.
+        </div>
+      </div>
+      <div class="note amber">
+        <b>AP_SAT in practice:</b> the stimulus <code>(rand()%N + 1.0)/N</code> can produce exactly 1.0.
+        <code>ap_fixed&lt;11,1&gt;</code> cannot represent 1, so it clamps to 1023/1024 = <code>0x3FF</code>.
+        With 1024 random values this is very likely to occur.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 15 · DOUBLE ================= -->
+<section class="slide" data-title="The double alternative">
+  <div class="kicker">Alternative path</div>
+  <h2>You can use <code>double</code> — know what you give up</h2>
+  <p class="lead">SV <code>real</code> maps to C <code>double</code>, and <code>ap_fixed</code> converts to and from it implicitly. It is convenient, but it is not a wire.</p>
+
+  <div class="body">
+    <div class="code">
+      <div class="code-head"><span>value-domain route</span><span class="tag">C++</span></div>
+      <pre><span class="c">// SV: import "DPI-C" function void take_real(input real r);  // C: double r</span>
+<span class="t">data_t</span> va = (std::rand() % N + <span class="n">1.0</span>) / N;  <span class="c">// double -&gt; ap_fixed (AP_RND / AP_SAT)</span>
+<span class="t">double</span> d  = (<span class="t">double</span>)va;                    <span class="c">// ap_fixed -&gt; double</span></pre>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3 style="color:var(--teal)">When it is fine</h3>
+        <ul>
+          <li><code>W ≤ 53</code>: a double’s 53-bit significand holds every raw value exactly.</li>
+          <li>Here W = 11 and 21, so the route is numerically exact.</li>
+          <li>Useful for logging, plotting and readable stimulus.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--red)">What you lose</h3>
+        <ul>
+          <li>Above 53 bits the conversion is silently lossy.</li>
+          <li>You compare numbers, not the exact words the RTL produced.</li>
+          <li><code>shortreal</code> ↔ <code>float</code> is only 24 bits — worse.</li>
+          <li>Every element goes through floating-point conversion.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      From this project’s notes: “For W ≤ 53 the double path is numerically exact here,
+      but raw bits are the general / bit-accurate option.”
+      <b>Rule of thumb:</b> raw words on the boundary; <code>double</code> only for printing.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 16 · WIDE ================= -->
+<section class="slide" data-title="Wider than 32 bits">
+  <div class="kicker">Wide values</div>
+  <h2>When the raw word exceeds 32 bits</h2>
+  <p class="lead">The carrier changes; the rule does not. You still move raw bits — now in 32-bit chunks.</p>
+
+  <div class="body">
+    <div class="card" style="padding:8px 14px">
+      <table class="tbl">
+        <tr><th>Width</th><th>DPI carrier</th><th>C type</th><th>Status</th></tr>
+        <tr class="hl">
+          <td class="mono">W ≤ 32</td><td class="mono">int</td><td class="mono">int</td>
+          <td><span style="color:var(--teal);font-weight:750">✓ verified here</span></td>
+        </tr>
+        <tr>
+          <td class="mono">33 ≤ W ≤ 64</td><td class="mono">longint</td><td class="mono">long long</td>
+          <td class="dim">guidance</td>
+        </tr>
+        <tr>
+          <td class="mono">W &gt; 32</td><td class="mono">bit [W-1:0]</td><td class="mono">svBitVecVal*</td>
+          <td class="dim">guidance</td>
+        </tr>
+        <tr>
+          <td class="mono">4-state needs</td><td class="mono">logic [W-1:0]</td><td class="mono">svLogicVecVal*</td>
+          <td class="dim">not for ap_fixed</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="stack">
+      <div class="bitlabel">
+        <span><b>Chunk layout for W = 70</b> — little-endian, 32 bits per word</span>
+        <span class="mono">nwords = ⌈W/32⌉ = 3</span>
+      </div>
+      <div class="grid3" style="gap:10px">
+        <div class="card" style="padding:10px 13px">
+          <div class="mono" style="font-size:12px;color:var(--accent);font-weight:750">word[0]</div>
+          <div class="mono" style="font-size:13px;margin-top:4px">bits 31 … 0</div>
+        </div>
+        <div class="card" style="padding:10px 13px">
+          <div class="mono" style="font-size:12px;color:var(--accent);font-weight:750">word[1]</div>
+          <div class="mono" style="font-size:13px;margin-top:4px">bits 63 … 32</div>
+        </div>
+        <div class="card" style="padding:10px 13px">
+          <div class="mono" style="font-size:12px;color:var(--accent);font-weight:750">word[2]</div>
+          <div class="mono" style="font-size:13px;margin-top:4px">bits 69 … 64 (zero-padded)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="note">
+        <b>2-state vs 4-state:</b> <code>ap_fixed</code> storage is 2-state, so prefer
+        <code>svBitVecVal</code>. Using <code>svLogicVecVal</code> forces you to set both
+        <code>aval</code> and <code>bval</code> per chunk.
+      </div>
+      <div class="note amber">
+        <b>Chunk k holds bits [32k+31 : 32k]</b>, with chunk 0 least significant.
+        For an unpacked array of vectors, the C pointer has a stride of <code>nwords</code>.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 17 · SIGNATURES ================= -->
+<section class="slide" data-title="DPI signature rules">
+  <div class="kicker">The DPI contract</div>
+  <h2>Signature rules that bite</h2>
+  <p class="lead">The SV declaration and the generated header are the real contract. Get them wrong and the library loads, then misbehaves.</p>
+
+  <div class="body">
+    <div class="split">
+      <div class="stack">
+        <div class="card">
+          <h3>Open arrays become pointers</h3>
+          <p style="font-size:14.5px;color:#33405a">The <code>[N]</code> disappears: size is not part of the ABI. C receives <code>int*</code>.</p>
+        </div>
+        <div class="card">
+          <h3>Function vs task (IXCOM)</h3>
+          <p style="font-size:14.5px;color:#33405a">A DPI <b>function</b> may take only <code>input</code> arguments.
+          For data flowing C → SV, use a <b>task</b> with <code>output</code>/<code>inout</code>, or an export callback.</p>
+        </div>
+        <div class="card">
+          <h3><code>context</code> routines</h3>
+          <p style="font-size:14.5px;color:#33405a">Required to call back into SV (exports, PLI). Both routines here are
+          <code>context</code>; non-context calls are cheaper where no callback is needed.</p>
+        </div>
+        <div class="card">
+          <h3><code>-dpi_void_task</code></h3>
+          <p style="font-size:14.5px;color:#33405a">Without it, an imported task returns <code>int</code>. The Makefile passes it, so the header says <code>void</code>.</p>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="code" style="flex:1">
+          <div class="code-head"><span>dpi_import.h</span><span class="tag">generated by xmelab</span></div>
+          <pre><span class="c">/* do not edit — generated */</span>
+
+<span class="k">extern</span> <span class="t">int</span>  <span class="f">tb_check</span>    (<span class="t">int</span> *_a1, <span class="t">int</span> *_a2,
+                                 <span class="t">int</span> *_a3);
+<span class="k">extern</span> <span class="t">void</span> <span class="f">tb_gen_stim</span> (<span class="t">int</span> *_a1, <span class="t">int</span> *_a2);</pre>
+        </div>
+        <div class="note teal">
+          <b>Match the header exactly.</b> Compile the C model against the generated file,
+          not a hand-written prototype — this is your only compile-time check.
+        </div>
+        <div class="note amber">
+          <b>Scope matters for exports:</b> declare the import inside the module whose scope
+          exported routines are resolved in (see <code>Tb.sv</code>), or export at <code>$unit</code>.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 18 · BUILD ================= -->
+<section class="slide" data-title="Build and run">
+  <div class="kicker">Build and run</div>
+  <h2>Three commands, one shared library</h2>
+  <p class="lead">The C model and the HLS reference function live in the same <code>.so</code>, built with the simulator’s own compiler.</p>
+
+  <div class="body">
+    <div class="split">
+      <div class="code">
+        <div class="code-head"><span>Makefile targets</span><span class="tag">bash</span></div>
+        <pre><span class="c"># 1. compile TB, emit generated DPI headers</span>
+make simc
+
+<span class="c"># 2. build C model + HLS reference together</span>
+make libdpi_hls
+   g++ -m64 -fPIC -shared \
+     -I$XLMHOME/tools.lnx86/include \
+     -I/system/EDA/Xilinx/2025.2/Vitis/include -Ihls \
+     -o sim_64/libdpi_hls.so \
+     hls/dut.cpp src/cpp/dpi_hls_model.cpp -lm
+
+<span class="c"># 3. run</span>
+make simrun
+   xrun -64 -R -sv_lib libdpi_hls.so</pre>
+      </div>
+
+      <div class="stack">
+        <div class="card" style="border-color:#b9e6d9;background:#f2fbf8">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin-bottom:8px">sim_64/sim_run.log</div>
+          <div style="font-family:var(--mono);font-size:17px;font-weight:700;color:#0b5a4a">TEST PASSED (1024 vectors)</div>
+          <div style="font-size:12.5px;color:#3c6b61;margin-top:7px">Xcelium 26.03-s004 · 10295 ns · $finish at Tb_hls.sv:95</div>
+        </div>
+        <div class="note">
+          <b>Use the simulator’s compiler</b> (Cadence <code>g++</code> 9.3 here) so the C ABI matches Xcelium.
+        </div>
+        <div class="note teal">
+          The Vitis include path is only for <code>ap_fixed</code> headers — it is header-only,
+          no HLS runtime library is linked.
+        </div>
+        <div class="note amber">
+          Stimulus is generated on the C side once; the same words are passed back into
+          <code>tb_check</code>. SV only stores and returns them.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 19 · PITFALLS ================= -->
+<section class="slide" data-title="Pitfall checklist">
+  <div class="kicker">Checklist</div>
+  <h2>Eight ways to get this wrong</h2>
+  <p class="lead">All of these compile. Most of them fail only at simulation time, or worse, pass with wrong data.</p>
+
+  <div class="body">
+    <div class="grid4" style="gap:13px">
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">1 · Fixed-point in a signature</h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">No DPI mapping exists. Pass bits.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">2 · Unmasked <code>get_VAL()</code></h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">Sign extension pollutes the high bits.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">3 · No <code>uint32_t</code> cast</h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">Negative ints leak ones past bit W−1.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">4 · Missing <code>$signed()</code></h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">Negative products appear as huge positives.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">5 · Comparing raw widths</h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">Mask both sides to the same W first.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">6 · Confusing I with F</h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4"><code>F = W − I</code>. <code>I</code> includes the sign bit.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">7 · Expecting Q/O on <code>.V</code></h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4">Writing the raw container bypasses rounding and saturation.</p>
+      </div>
+      <div class="card" style="padding:12px 14px;border-top:3px solid var(--red)">
+        <h3 style="font-size:13.5px">8 · Wrong vector type</h3>
+        <p style="font-size:13.5px;color:var(--muted);line-height:1.4"><code>svBitVecVal</code> for 2-state; <code>svLogicVecVal</code> needs <code>bval</code>.</p>
+      </div>
+    </div>
+
+    <div class="note" style="font-size:16px">
+      <b>Debug heuristic:</b> if only negative values fail, think sign extension.
+      If only wide values fail, think masks. If nothing fails but the numbers are off by 2<sup>F</sup>, think binary point.
+    </div>
+  </div>
+</section>
+
+<!-- ================= 20 · SUMMARY ================= -->
+<section class="slide" data-title="Summary and recipe">
+  <div class="kicker">Summary</div>
+  <h2>Pick the carrier, then move bits</h2>
+  <p class="lead">The type table is small enough to memorize, and the conversion is smaller still.</p>
+
+  <div class="body">
+    <div class="split">
+      <div class="card" style="padding:8px 14px">
+        <table class="tbl">
+          <tr><th>Your boundary</th><th>Carrier</th></tr>
+          <tr class="hl"><td>signed <code>ap_fixed&lt;W,I&gt;</code>, W ≤ 32, scalar</td><td class="mono">int → int</td></tr>
+          <tr><td>array of them</td><td class="mono">int a[N] → int*</td></tr>
+          <tr><td>value written by C</td><td class="mono">task(output int a[N])</td></tr>
+          <tr><td>33 ≤ W ≤ 64</td><td class="mono">longint → long long</td></tr>
+          <tr><td>W &gt; 64</td><td class="mono">bit [W-1:0] → svBitVecVal*</td></tr>
+          <tr><td><code>ap_ufixed</code></td><td class="mono">same bits, no sign extension</td></tr>
+        </table>
+      </div>
+
+      <div class="stack">
+        <div class="card" style="border-left:3px solid var(--accent)">
+          <p style="font-size:15px;line-height:1.5"><b>1.</b> DPI never sees fixed point. It moves W-bit words.</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--accent)">
+          <p style="font-size:15px;line-height:1.5"><b>2.</b> <code>ap_fixed</code> supplies the meaning:
+            <code>value = raw / 2<sup>W−I</sup></code>.</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--accent)">
+          <p style="font-size:15px;line-height:1.5"><b>3.</b> Mask on read, sign-extend on widen — then C and RTL agree bit-for-bit.</p>
+        </div>
+        <div class="note teal" style="font-size:13.5px">
+          <b>Evidence:</b> 1024 vectors, <code>TEST PASSED</code>, Xcelium 26.03-s004.
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:12px 16px">
+      <div style="font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:7px">References</div>
+      <div class="grid2" style="gap:6px 24px">
+        <div style="font-size:13px;color:#33405a">IEEE 1800-2017 §35 — DPI type mappings</div>
+        <div style="font-size:13px;color:#33405a">Cadence — Using IXCOM for SystemVerilog DPI, PLI, and VHPI Designs, 26.07</div>
+        <div style="font-size:13px;color:#33405a">Vitis HLS — <code>ap_fixed</code> arbitrary-precision reference</div>
+        <div style="font-size:13px;color:#33405a">This repo — <code>hls/define.h</code>, <code>src/cpp/dpi_hls_model.cpp</code>, <code>src/v/Tb_hls.sv</code></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /stage -->
+</div><!-- /viewport -->
+
+<div class="nav">
+  <button id="prev" aria-label="Previous slide" title="Previous (←)">‹</button>
+  <button id="next" aria-label="Next slide" title="Next (→)">›</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var stage  = document.getElementById('stage');
+  var bar    = document.getElementById('bar');
+  var total  = slides.length;
+  var index  = 0;
+
+  /* ---- build bit strips ------------------------------------------------ */
+  document.querySelectorAll('.bits').forEach(function (el) {
+    var raw  = parseInt(el.getAttribute('data-raw'), 10) || 0;
+    var tone = el.getAttribute('data-tone') || 'a';
+    for (var b = 31; b >= 0; b--) {
+      var cell = document.createElement('span');
+      cell.textContent = b;
+      if (b < raw) cell.className = 'tone-' + tone;
+      el.appendChild(cell);
+    }
+  });
+
+  /* ---- per-slide footer ------------------------------------------------ */
+  slides.forEach(function (s, i) {
+    if (s.classList.contains('title-hidden')) return;
+    var mark = document.createElement('div');
+    mark.className = 'deckmark';
+    mark.textContent = 'HLS-DPI-C · DPI-C ↔ ap_fixed';
+    s.appendChild(mark);
+    var pg = document.createElement('div');
+    pg.className = 'pager';
+    pg.textContent = String(i + 1).padStart(2, '0') + ' / ' + total;
+    s.appendChild(pg);
+  });
+
+  /* ---- scaling --------------------------------------------------------- */
+  function fit() {
+    var s = Math.min((window.innerWidth - 28) / 1280,
+                     (window.innerHeight - 28) / 720);
+    stage.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  /* ---- navigation ------------------------------------------------------ */
+  function show(n, pushHash) {
+    index = Math.max(0, Math.min(total - 1, n));
+    slides.forEach(function (s, i) {
+      s.classList.toggle('active', i === index);
+    });
+    bar.style.width = ((index + 1) / total * 100).toFixed(2) + '%';
+    if (pushHash !== false) {
+      var h = '#slide-' + (index + 1);
+      if (window.location.hash !== h) {
+        try { history.replaceState(null, '', h); } catch (err) { /* file: URLs */ }
+      }
+    }
+  }
+
+  function fromHash() {
+    var m = /^#slide-(\d+)$/.exec(window.location.hash || '');
+    return m ? parseInt(m[1], 10) - 1 : 0;
+  }
+
+  window.addEventListener('hashchange', function () { show(fromHash(), false); });
+
+  document.getElementById('prev').addEventListener('click', function () { show(index - 1); });
+  document.getElementById('next').addEventListener('click', function () { show(index + 1); });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+      case 'PageDown':
+      case ' ':
+        e.preventDefault(); show(index + 1); break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+      case 'PageUp':
+        e.preventDefault(); show(index - 1); break;
+      case 'Home':
+        e.preventDefault(); show(0); break;
+      case 'End':
+        e.preventDefault(); show(total - 1); break;
+      case 'f':
+      case 'F':
+        e.preventDefault();
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(function () {});
+        } else {
+          document.exitFullscreen().catch(function () {});
+        }
+        break;
+      case 'p':
+      case 'P':
+        e.preventDefault(); window.print(); break;
+    }
+  });
+
+  /* click the right two-thirds / left third to advance (ignores text selection) */
+  stage.addEventListener('click', function (e) {
+    if (window.getSelection && String(window.getSelection()) !== '') return;
+    var r = stage.getBoundingClientRect();
+    show(index + (e.clientX - r.left > r.width / 2 ? 1 : -1));
+  });
+
+  show(fromHash(), false);
+})();
+</script>
+</body>
+</html>
