@@ -1,0 +1,4 @@
+../src/v/Tb_hls.sv
+../wdir/hls/impl/verilog/dut.v
+../wdir/hls/impl/verilog/dut_mul_11s_11s_22_1_1.v
+../wdir/hls/impl/verilog/dut_flow_control_loop_pipe_no_ap_cont.v
